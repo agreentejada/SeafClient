@@ -23,6 +23,8 @@ namespace SeafClient.Requests.Files
 
         public string TargetDirectory { get; set; }
 
+        public bool CreateParents { get; set; }
+
         List<UploadFileInfo> files = new List<UploadFileInfo>();
 
         public List<UploadFileInfo> Files
@@ -51,8 +53,8 @@ namespace SeafClient.Requests.Files
         /// <param name="filename"></param>
         /// <param name="fileContent"></param>
         /// <param name="progressCallback"></param>
-        public UploadFilesRequest(string authToken, string uploadUri, string targetDirectory, string filename, Stream fileContent, Action<float> progressCallback)
-            : this(authToken, uploadUri, targetDirectory, progressCallback, new UploadFileInfo(filename, fileContent))
+        public UploadFilesRequest(string authToken, string uploadUri, string targetDirectory, string filename, Stream fileContent, Action<float> progressCallback, bool createParents = false)
+            : this(authToken, uploadUri, targetDirectory, progressCallback, createParents, new UploadFileInfo(filename, fileContent))
         {
             // --
         }
@@ -65,12 +67,13 @@ namespace SeafClient.Requests.Files
         /// <param name="filename"></param>
         /// <param name="fileContent"></param>
         /// <param name="progressCallback"></param>
-        public UploadFilesRequest(string authToken, string uploadUri, string targetDirectory, Action<float> progressCallback, params UploadFileInfo[] uploadFiles)
+        public UploadFilesRequest(string authToken, string uploadUri, string targetDirectory, Action<float> progressCallback, bool createParents = false, params UploadFileInfo[] uploadFiles)
             : base(authToken)
         {
             UploadUri = uploadUri;
             UploadProgress = progressCallback;
             TargetDirectory = targetDirectory;
+            CreateParents = createParents;
 
             files.AddRange(uploadFiles);
         }
@@ -107,15 +110,33 @@ namespace SeafClient.Requests.Files
                 content.Add(fileContent);
             }
 
-            // the parent dir to upload the file to
-            string tDir = TargetDirectory;
-            if (!tDir.StartsWith("/"))
-                tDir = "/" + tDir;
 
-            var dirContent = new StringContent(tDir, Encoding.UTF8);
-            dirContent.Headers.ContentType = null;
-            dirContent.Headers.TryAddWithoutValidation("Content-Disposition", @"form-data; name=""parent_dir""");
-            content.Add(dirContent);
+            if (CreateParents) {
+                var parentContent = new StringContent("/", Encoding.UTF8);
+                parentContent.Headers.ContentType = null;
+                parentContent.Headers.TryAddWithoutValidation("Content-Disposition", @"form-data; name=""parent_dir""");
+                content.Add(parentContent);
+
+                var tdir = TargetDirectory;
+                if (tdir.StartsWith("/"))
+                    tdir = tdir.Substring(1);
+
+                var dirContent = new StringContent(tdir, Encoding.UTF8);
+                dirContent.Headers.ContentType = null;
+                dirContent.Headers.TryAddWithoutValidation("Content-Disposition", @"form-data; name=""relative_path""");
+                content.Add(dirContent);
+            } 
+            else {
+                var tdir = TargetDirectory;
+                if (!tdir.StartsWith("/"))
+                    tdir = "/" + tdir;
+
+                var dirContent = new StringContent(tdir, Encoding.UTF8);
+                dirContent.Headers.ContentType = null;
+                dirContent.Headers.TryAddWithoutValidation("Content-Disposition", @"form-data; name=""parent_dir""");
+                content.Add(dirContent);
+            }
+
 
             // transmit the content length
             long conLen;

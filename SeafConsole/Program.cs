@@ -103,7 +103,7 @@ namespace SeafConsole
                 // groups
                 Console.WriteLine("Groups:");
                 var groupList = await session.ListGroups();
-                foreach(var g in groupList)
+                foreach (var g in groupList)
                 {
                     Console.WriteLine(String.Format("{0:d} {1}", g.Id, g.Name));
                 }
@@ -118,7 +118,7 @@ namespace SeafConsole
                     var request = new ListGroupMembersRequest(session.AuthToken, group.Id, 120);
                     var members = await session.SendRequest(request);
                     Console.WriteLine("Group members:");
-                    foreach(var m in members)
+                    foreach (var m in members)
                     {
                         Console.WriteLine("  " + m.Name + " " + m.Email);
                     }
@@ -135,12 +135,7 @@ namespace SeafConsole
                 {
                     var group = await session.AddGroup("new group");
                     Console.WriteLine("added group: " + group.Id + " - " + group.Name);
-                }                
-
-                // default library
-                var defLib = await session.GetDefaultLibrary();
-                Console.WriteLine("Default library: " + defLib.Name);
-                                
+                }
 
                 // retrieve user's libraries & shared libraries
                 var libs = await session.ListLibraries();
@@ -157,16 +152,17 @@ namespace SeafConsole
                 }
                 Console.WriteLine(MiscUtils.PadElementsInLines(lines, 2));
 
-                // list directories recursively
-                var listDirsRequest = new ListDirectoryEntriesRequest(session.AuthToken, defLib.Id, "/", true);
+                // list the directory of the first library recursively
+                var flib = libs.First();
+                var listDirsRequest = new ListDirectoryEntriesRequest(session.AuthToken, flib.Id, "/", false);
                 var dirs = await session.SendRequest(listDirsRequest);
 
-                foreach(var d in dirs)
+                foreach (var d in dirs)
                 {
                     Console.WriteLine(d.Path);
                 }
 
-                
+
             }
             catch (AggregateException ex)
             {

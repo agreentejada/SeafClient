@@ -22,7 +22,7 @@ namespace SeafClient.Requests.Libraries
         public bool CreateEncrypted { get; set; }
         public char[] Password { get; set; }
 
-        public override string CommandUri { get { return String.Format("api2/repos/"); } }
+        public override string CommandUri { get { return string.Format("api2/repos/"); } }
 
         public override HttpAccessMethod HttpAccessMethod { get { return HttpAccessMethod.Custom; } }        
 

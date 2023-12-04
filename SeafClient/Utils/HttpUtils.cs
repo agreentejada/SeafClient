@@ -2,6 +2,9 @@
 using System.Linq;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Threading.Tasks;
+using System.Text;
+using System.IO;
 
 namespace SeafClient.Utils
 {
@@ -31,6 +34,47 @@ namespace SeafClient.Utils
             }
 
             return message;
-        }        
+        }
+
+        /// <summary>
+        /// Copied over from https://www.jordanbrown.dev/2021/02/06/2021/http-to-raw-string-csharp/ and modified to fit HttpRequestMessage.
+        /// Writes out the HTTP Message being sent over the wire as a string.
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
+        public static async Task<string> ToRawString(this HttpRequestMessage request)
+        {
+            var sb = new StringBuilder();
+
+            var line1 = $"{request.Method} {request.RequestUri}";
+            sb.AppendLine(line1);
+
+            foreach (var (key, values) in request.Headers)
+            {
+                foreach (var value in values)
+                {
+                    var header = $"{key}: {value}";
+                    sb.AppendLine(header);
+                }
+            }
+
+
+            if (request.Content != null)
+            {
+                foreach (var (key, values) in request.Content.Headers)
+                {
+                    foreach (var value in values)
+                    {
+                        var header = $"{key}: {value}";
+                        sb.AppendLine(header);
+                    }
+                }
+
+                sb.AppendLine();
+                sb.Append(await request.Content.ReadAsStringAsync());
+            }
+
+            return sb.ToString();
+        }
     }
 }

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using SeafClient.Exceptions;
 using SeafClient.Utils;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace SeafClient
 {
@@ -30,7 +31,7 @@ namespace SeafClient
         /// </summary>
         /// <param name="timeout">A custom timeout for all requests. When this is null the default timeout is used</param>
         public SeafHttpConnection(TimeSpan? timeout)
-            : this(new HttpClientHandler() { AllowAutoRedirect = false }, timeout)
+            : this(new HttpClientHandler() { AllowAutoRedirect = true, MaxAutomaticRedirections = 4 }, timeout)
         {            
             // --
         }
@@ -122,6 +123,11 @@ namespace SeafClient
             // when no custom timeout has been passed use the client's default timeout
             using (CancellationTokenSource cTokenSource = new CancellationTokenSource(timeout ?? client.Timeout))
             {
+#if DEBUG
+                Debug.WriteLine($"REQUEST for {this.GetType().Name}\n");
+                Debug.WriteLine(await requestMessage.ToRawString() + "\n");
+                Debug.WriteLine(new string('=', 10));
+#endif
                 response = await client.SendAsync(requestMessage, cTokenSource.Token);
             }
 

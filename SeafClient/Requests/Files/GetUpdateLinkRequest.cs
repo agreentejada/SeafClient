@@ -18,7 +18,7 @@ namespace SeafClient.Requests.Files
 
         public override string CommandUri
         {
-            get { return String.Format("api2/repos/{0}/update-link/?p={1}", LibraryId, TargetDirectory); }
+            get { return String.Format("api2/repos/{0}/update-link/?p={1}", LibraryId, WebUtility.UrlEncode(TargetDirectory)); }
         }
 
         public GetUpdateLinkRequest(string authToken, string libraryId, string targetDirectory)

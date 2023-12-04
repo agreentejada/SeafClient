@@ -14,9 +14,11 @@ namespace SeafClient.Requests.Directories
 
         public string Path { get; set; }
 
+        public bool CreateParents { get; set; }
+
         public override string CommandUri
         {
-            get { return String.Format("api2/repos/{0}/dir/?p={1}", LibraryId, Path); }
+            get { return string.Format($"api2/repos/{LibraryId}/dir/?p={WebUtility.UrlEncode(Path)}"); }
         }
 
         public override HttpAccessMethod HttpAccessMethod
@@ -24,11 +26,12 @@ namespace SeafClient.Requests.Directories
             get { return HttpAccessMethod.Post; }
         }
 
-        public CreateDirectoryRequest(string authToken, string libraryId, string path)
+        public CreateDirectoryRequest(string authToken, string libraryId, string path, bool createParents = false)
             : base(authToken)
         {
             LibraryId = libraryId;
             Path = path;
+            CreateParents = createParents;
 
             if (!Path.StartsWith("/"))
                 Path = "/" + Path;
@@ -40,6 +43,9 @@ namespace SeafClient.Requests.Directories
                 yield return p;
 
             yield return new KeyValuePair<string, string>("operation", "mkdir");
+
+            if (CreateParents)
+                yield return new KeyValuePair<string, string>("create_parents", "true");
         }
 
         public override bool WasSuccessful(System.Net.Http.HttpResponseMessage msg)

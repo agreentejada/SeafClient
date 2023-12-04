@@ -22,7 +22,7 @@ namespace SeafClient.Requests.Files
 
         public override string CommandUri
         {
-            get { return String.Format("api2/repos/{0}/file/?p={1}&reuse={2}", LibraryId, WebUtility.UrlEncode(Path),Reuse); }
+            get { return String.Format("api2/repos/{0}/file/?p={1}&reuse={2}", LibraryId, WebUtility.UrlEncode(Path), Reuse); }
         }
 
         public GetFileDownloadLinkRequest(string authToken, string libraryId, string path, bool reuseableLink) : base(authToken)

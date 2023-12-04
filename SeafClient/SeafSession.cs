@@ -8,6 +8,7 @@ using SeafClient.Requests.Directories;
 using SeafClient.Requests.Files;
 using SeafClient.Requests.Groups;
 using SeafClient.Requests.Libraries;
+using SeafClient.Requests.ShareLinks;
 using SeafClient.Requests.StarredFiles;
 using SeafClient.Requests.UserAccountInfo;
 using SeafClient.Types;
@@ -410,6 +411,21 @@ namespace SeafClient
         }
 
         /// <summary>
+        ///     Gets the details of the given directory of the given library.
+        /// </summary>
+        /// <returns></returns>
+        public async Task<SeafDirDetail> GetDirectoryDetail(string libraryId, string directory)
+        {
+            libraryId.ThrowOnNull(nameof(libraryId));
+            directory.ThrowOnNull(nameof(directory));
+            if (!directory.EndsWith("/"))
+                directory += "/";
+
+            var request = new GetDirectoryDetailRequest(AuthToken, libraryId, directory);
+            return await _webConnection.SendRequestAsync(ServerUri, request);
+        }
+
+        /// <summary>
         ///     Create a new directory in the given library
         /// </summary>
         /// <param name="library">Library to create the directory in</param>
@@ -427,13 +443,14 @@ namespace SeafClient
         /// </summary>
         /// <param name="libraryId">The id of the library to create the directory in</param>
         /// <param name="path">Path of the directory to create</param>
+        /// <param name="createParents">Given a nested directory, determines whether Seafile should create parent directories.</param>
         /// <returns>A value which indicates if the creation was successful</returns>
-        public async Task<bool> CreateDirectory(string libraryId, string path)
+        public async Task<bool> CreateDirectory(string libraryId, string path, bool createParents = false)
         {
             libraryId.ThrowOnNull(nameof(libraryId));
             path.ThrowOnNull(nameof(path));
 
-            var request = new CreateDirectoryRequest(AuthToken, libraryId, path);
+            var request = new CreateDirectoryRequest(AuthToken, libraryId, path, createParents);
             return await _webConnection.SendRequestAsync(ServerUri, request);
         }
 
@@ -879,11 +896,11 @@ namespace SeafClient
         /// <param name="targetFilename">The name of the file</param>
         /// <param name="fileContent">The new content of the file</param>
         /// <param name="progressCallback">Optional progress callback (will report percentage of upload)</param>
-        public async Task<bool> UploadSingle(SeafLibrary library, string targetDirectory, string targetFilename, Stream fileContent, Action<float> progressCallback = null)
+        public async Task<bool> UploadSingle(SeafLibrary library, string targetDirectory, string targetFilename, Stream fileContent, Action<float> progressCallback = null, bool createParents = false)
         {
             library.ThrowOnNull(nameof(library));
 
-            return await UploadSingle(library.Id, targetDirectory, targetFilename, fileContent, progressCallback);
+            return await UploadSingle(library.Id, targetDirectory, targetFilename, fileContent, progressCallback, createParents);
         }
 
         /// <summary>
@@ -897,13 +914,23 @@ namespace SeafClient
         /// <param name="targetFilename">The name of the file</param>
         /// <param name="fileContent">The new content of the file</param>
         /// <param name="progressCallback">Optional progress callback (will report percentage of upload)</param>
-        public async Task<bool> UploadSingle(string libraryId, string targetDirectory, string targetFilename, Stream fileContent, Action<float> progressCallback = null)
+        /// <param name="createParents">Whether the upload command should automatically create parent directories for the user. Note that this will change where the initial upload link is placed.</param>
+        public async Task<bool> UploadSingle(string libraryId, string targetDirectory, string targetFilename, Stream fileContent, Action<float> progressCallback = null, bool createParents = false)
         {
-            // to upload files we need to get an upload link first            
-            var req = new GetUploadLinkRequest(AuthToken, libraryId);
-            var uploadLink = await _webConnection.SendRequestAsync(ServerUri, req);
+            // To upload files, we first need to create and get and upload link. If createParents is set to true, we cannot assume that the targetDirectory exists.
+            string uploadLink;
+            if (createParents)
+            {
+                var req = new GetUploadLinkRequest(AuthToken, libraryId, "/");
+                uploadLink = await _webConnection.SendRequestAsync(ServerUri, req);
+            }
+            else
+            {
+                var req = new GetUploadLinkRequest(AuthToken, libraryId, targetDirectory);
+                uploadLink = await _webConnection.SendRequestAsync(ServerUri, req);
+            }
 
-            var uploadRequest = new UploadFilesRequest(AuthToken, uploadLink, targetDirectory, targetFilename, fileContent, progressCallback);
+            var uploadRequest = new UploadFilesRequest(AuthToken, uploadLink, targetDirectory, targetFilename, fileContent, progressCallback, createParents);
             return await _webConnection.SendRequestAsync(ServerUri, uploadRequest);
         }
 
@@ -1229,6 +1256,46 @@ namespace SeafClient
             if (request.SupportedWithServerVersion(ServerVersion))            
                 throw new InvalidOperationException("The request is not supportd by a server with version " + ServerVersion.ToString());            
         }
+
+        #region Share Links
+
+        public async Task<SeafShareLink> CreateShareLink(string libraryId,
+            string path,
+            string password = null,
+            int? expirationDays = null,
+            DateTime? expirationTime = null,
+            bool canEdit = false,
+            bool canDownload = true,
+            bool canUpload = false)
+        {
+            var request = new CreateShareLinkRequest(
+                AuthToken,
+                libraryId,
+                path,
+                password,
+                expirationDays,
+                expirationTime,
+                canEdit,
+                canDownload,
+                canUpload
+                );
+            var result = await _webConnection.SendRequestAsync(ServerUri, request);
+            return result;
+        }
+
+        public async Task<IList<SeafShareLink>> ListSharedLinks(string pLibraryId = "", string pPath = "")
+        {
+            var request = new ListShareLinksRequest(AuthToken,pLibraryId,pPath);
+            return await _webConnection.SendRequestAsync(ServerUri, request);
+        }
+
+        public async Task<bool> DeleteShareLink(string shareLinkToken)
+        {
+            var request = new DeleteShareLinkRequest(AuthToken, shareLinkToken);
+            return await _webConnection.SendRequestAsync(ServerUri, request);
+        }
+
+        #endregion
 
         /// <summary>
         /// Ends this seafile session

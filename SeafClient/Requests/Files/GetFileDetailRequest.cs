@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Net.Http;
+using System.Net;
 
 namespace SeafClient.Requests.Files
 {
@@ -14,11 +15,11 @@ namespace SeafClient.Requests.Files
     public class GetFileDetailRequest : SessionRequest<SeafDirEntry>
     {
         public string LibraryId { get; set; }
-        public String Path { get; set; }
+        public string Path { get; set; }
 
         public override string CommandUri
         {
-            get { return String.Format("api2/repos/{0}/file/detail/?p={1}", LibraryId, Path); }
+            get { return string.Format("api2/repos/{0}/file/detail/?p={1}", LibraryId, WebUtility.UrlEncode(Path)); }
         }
 
         public GetFileDetailRequest(string authToken, string libraryId, string path) 
@@ -26,6 +27,8 @@ namespace SeafClient.Requests.Files
         {            
             LibraryId = libraryId;
             Path = path;
+
+            if (!Path.StartsWith("/")) { Path = "/" + Path; }
         }
 
         public override async Task<SeafDirEntry> ParseResponseAsync(HttpResponseMessage msg)
