@@ -1295,6 +1295,12 @@ namespace SeafClient
             return await _webConnection.SendRequestAsync(ServerUri, request);
         }
 
+        public async Task<SeafSmartLink> GetSmartLink(string libraryId, string path, bool isFolder)
+        {
+            var request = new GetSmartLinkRequest(AuthToken, libraryId, path, isFolder);
+            return await _webConnection.SendRequestAsync(ServerUri, request);
+        }
+
         #endregion
 
         /// <summary>
