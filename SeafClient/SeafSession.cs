@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using SeafClient.Requests;
+using SeafClient.Requests.Admin;
 using SeafClient.Requests.Directories;
 using SeafClient.Requests.Files;
 using SeafClient.Requests.Groups;
@@ -1301,6 +1302,27 @@ namespace SeafClient
             return await _webConnection.SendRequestAsync(ServerUri, request);
         }
 
+        #endregion
+
+        #region Admin
+        public async Task<SeafUser> CreateUser(string email, string password, bool isStaff,
+            bool isActive, string role, string name,
+            string loginId, string contactEmail, string referenceId,
+            string department, long quotaTotal)
+        {
+            var request = new CreateUserRequest(AuthToken, 
+                email, password, isStaff, 
+                isActive, role, name, 
+                loginId, contactEmail, referenceId, 
+                department, quotaTotal);
+            return await _webConnection.SendRequestAsync(ServerUri, request);
+        }
+
+        public async Task<bool> DeleteUser(string email)
+        {
+            var request = new DeleteUserRequest(AuthToken, email);
+            return await _webConnection.SendRequestAsync(ServerUri, request);
+        }
         #endregion
 
         /// <summary>
