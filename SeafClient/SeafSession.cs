@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using SeafClient.Requests;
+﻿using SeafClient.Requests;
 using SeafClient.Requests.Directories;
 using SeafClient.Requests.Files;
 using SeafClient.Requests.Groups;
@@ -13,6 +8,12 @@ using SeafClient.Requests.StarredFiles;
 using SeafClient.Requests.UserAccountInfo;
 using SeafClient.Types;
 using SeafClient.Utils;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 
 namespace SeafClient
 {
@@ -24,6 +25,7 @@ namespace SeafClient
     public class SeafSession
     {
         private readonly ISeafWebConnection _webConnection;
+        private readonly ISeafWebConnection _moveConnection;
 
 
         /// <summary>
@@ -58,6 +60,7 @@ namespace SeafClient
         private SeafSession(ISeafWebConnection seafWebConnection, string username, Uri serverUri, string authToken, Version serverVersion)
         {
             _webConnection = seafWebConnection;
+            _moveConnection = new SeafHttpConnection(new HttpClientHandler() { AllowAutoRedirect = false, MaxAutomaticRedirections = 4 }, null);
             Username = username;
             ServerUri = serverUri;
             AuthToken = authToken;
@@ -720,7 +723,8 @@ namespace SeafClient
             targetDirectory.ThrowOnNull(nameof(targetDirectory));
 
             var request = new MoveFileRequest(AuthToken, libraryId, filePath, targetLibraryId, targetDirectory);
-            return await _webConnection.SendRequestAsync(ServerUri, request);
+            // Uses a special SeafHttpConnection for moving files.
+            return await _moveConnection.SendRequestAsync(ServerUri, request);
         }
 
         /// <summary>
