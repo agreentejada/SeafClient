@@ -1,14 +1,11 @@
 ﻿using SeafClient.Utils;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Reflection;
 using System.Net.Http.Headers;
-using System.Diagnostics;
 using SeafClient.Types;
 
 namespace SeafClient.Requests.Files

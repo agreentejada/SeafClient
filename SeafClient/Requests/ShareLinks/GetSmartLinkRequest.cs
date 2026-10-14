@@ -1,7 +1,5 @@
-﻿using Newtonsoft.Json;
-using SeafClient.Types;
+﻿using SeafClient.Types;
 using System.Net;
-using System.Threading.Tasks;
 
 namespace SeafClient.Requests.ShareLinks
 {
