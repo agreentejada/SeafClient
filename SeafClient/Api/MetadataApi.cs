@@ -5,9 +5,12 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>Library metadata server (extended properties such as <c>_description</c>, tags). Seafile 12+ Pro.</summary>
-public sealed class MetadataApi
+public sealed partial class MetadataApi
 {
-    /// <summary>Maximum records per update request accepted by the server.</summary>
+    /// <summary>
+    /// Maximum records per update request accepted by the server. Seafile 14 misapplies values when one request carries
+    /// <em>different</em> values for several records, so updates are first grouped by identical values, then batched.
+    /// </summary>
     public const int MaxBatchSize = 100;
 
     private readonly SeafTransport _t;
@@ -49,15 +52,7 @@ public sealed class MetadataApi
     public Task UpdateRecordAsync(string libraryId, string recordId, IReadOnlyDictionary<string, object?> values, CancellationToken ct = default)
         => UpdateRecordsAsync(libraryId, [new SeafMetadataUpdate(recordId, values)], ct);
 
-    /// <summary>Updates many records, split into requests of <see cref="MaxBatchSize"/>.</summary>
-    public async Task UpdateRecordsAsync(string libraryId, IEnumerable<SeafMetadataUpdate> updates, CancellationToken ct = default)
-    {
-        foreach (var chunk in updates.Chunk(MaxBatchSize))
-        {
-            await _t.SendAsync(HttpMethod.Put, Base(libraryId) + "records/", SeafTransport.Json(new
-            {
-                records_data = chunk.Select(u => new { record_id = u.RecordId, record = u.Values }),
-            }), ct).ConfigureAwait(false);
-        }
-    }
+    /// <summary>Updates many records. Records with identical values share requests of up to <see cref="MaxBatchSize"/>.</summary>
+    public Task UpdateRecordsAsync(string libraryId, IEnumerable<SeafMetadataUpdate> updates, CancellationToken ct = default)
+        => Core(libraryId).UpdateRecordsAsync(updates, MaxBatchSize, ct);
 }

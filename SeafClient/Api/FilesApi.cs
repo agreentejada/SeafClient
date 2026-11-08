@@ -7,7 +7,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>File endpoints, including upload and download.</summary>
-public sealed class FilesApi
+public sealed partial class FilesApi
 {
     private readonly SeafTransport _t;
     internal FilesApi(SeafTransport t) => _t = t;

@@ -4,7 +4,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>Groups the current user belongs to, and their members.</summary>
-public sealed class GroupsApi
+public sealed partial class GroupsApi
 {
     private readonly SeafTransport _t;
     internal GroupsApi(SeafTransport t) => _t = t;

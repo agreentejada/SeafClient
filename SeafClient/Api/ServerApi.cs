@@ -4,7 +4,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>Server-level and current-account endpoints.</summary>
-public sealed class ServerApi
+public sealed partial class ServerApi
 {
     private readonly SeafTransport _t;
     internal ServerApi(SeafTransport t) => _t = t;

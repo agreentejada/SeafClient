@@ -4,7 +4,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>Starred files and folders of the current user.</summary>
-public sealed class StarredApi
+public sealed partial class StarredApi
 {
     private readonly SeafTransport _t;
     internal StarredApi(SeafTransport t) => _t = t;

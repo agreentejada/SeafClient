@@ -5,7 +5,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>User management via the admin API. Requires a staff (system admin) account.</summary>
-public sealed class AdminUsersApi
+public sealed partial class AdminUsersApi
 {
     private readonly SeafTransport _t;
     internal AdminUsersApi(SeafTransport t) => _t = t;

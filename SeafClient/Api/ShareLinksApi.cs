@@ -4,7 +4,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>Public share links and internal smart links.</summary>
-public sealed class ShareLinksApi
+public sealed partial class ShareLinksApi
 {
     private readonly SeafTransport _t;
     internal ShareLinksApi(SeafTransport t) => _t = t;

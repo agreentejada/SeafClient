@@ -4,7 +4,7 @@ using SeafClient.Models;
 namespace SeafClient.Api;
 
 /// <summary>Library ("repo") endpoints.</summary>
-public sealed class LibrariesApi
+public sealed partial class LibrariesApi
 {
     private readonly SeafTransport _t;
     internal LibrariesApi(SeafTransport t) => _t = t;

@@ -37,20 +37,41 @@ var (link, created) = await seaf.ShareLinks.GetOrCreateAsync(lib.Id, uploaded.Pa
 
 An existing API token can be used directly: `SeafSession.FromToken(serverUri, token)`.
 
+### Library (repo) API tokens
+
+A repo token grants access to a single library without a user account, e.g. for integrations:
+
+```csharp
+var token = await seaf.Libraries.CreateApiTokenAsync(lib.Id, "my-integration", SeafRepoTokenPermission.Rw);
+using var repo = SeafRepoTokenSession.FromToken(serverUri, token.ApiToken);
+await repo.Directories.EnsureAsync("/inbox");
+await repo.Files.UploadAsync("/inbox", "a.txt", stream);
+```
+
+`SeafRepoTokenSession` offers `Directories`, `Files`, `Items`, `ShareLinks` and `Metadata` (records, views, tags) scoped to that library.
+On Seafile 14 some tag operations (file tags, tag files, tag links) fail through a repo token server-side; use an account session for those.
+
 ## API overview
 
 | Group | Highlights |
 |---|---|
 | `Server` | `PingAsync`, `AuthPingAsync`, `GetInfoAsync`, `GetAccountInfoAsync`, `GetAvatarUrlAsync` |
-| `Libraries` | `ListAsync(type)`, `ListDistinctAsync`, `FindByNameAsync`, `GetAsync`, `CreateAsync`, `RenameAsync`, `DeleteAsync`, `DecryptAsync`, default library, `ShareWithGroupAsync` / `ShareWithUserAsync` / `ListSharesAsync` / `Unshare*` |
-| `Directories` | `ListAsync` (filter, recursive), `GetAsync` / `TryGetAsync` / `ExistsAsync`, `CreateAsync`, `EnsureAsync`, `RenameAsync`, `CopyAsync`, `MoveAsync`, `DeleteAsync` / `DeleteIfExistsAsync` |
-| `Files` | `GetAsync` / `TryGetAsync` / `ExistsAsync`, `UploadAsync` / `UploadFileAsync`, `UpdateAsync`, `OpenReadAsync`, `DownloadAsync`, `ReadAllBytesAsync`, `ReadAllTextAsync`, download/upload links, `RenameAsync`, `CopyAsync`, `MoveAsync`, `DeleteAsync`, `CreateAsync`, `GetHistoryAsync`, `LockAsync` / `UnlockAsync`, `GetThumbnailAsync` |
-| `Items` | Batch `CopyAsync`, `MoveAsync`, `DeleteAsync` of several entries in one directory |
-| `ShareLinks` | `ListAsync`, `GetAsync`, `CreateAsync`, `GetOrCreateAsync`, `DeleteAsync`, `GetSmartLinkAsync` |
+| `Account` | Profile get/update, `UploadAvatarAsync`, devices list/unlink, client-login token/URL, `ListActivitiesAsync` |
+| `Libraries` | `ListAsync(type)`, `ListDistinctAsync`, `FindByNameAsync`, `SearchByNameAsync`, `GetAsync`, `CreateAsync`, `RenameAsync`, `DeleteAsync`, `DecryptAsync`, default library, owner / `TransferAsync`, history, commits, snapshots (`ListSnapshotDirectoryAsync`, `RevertToSnapshotAsync`), snapshot labels, history limit, trash (list/clean/restore), shared-with-me / `LeaveShareAsync`, sharing with users/groups (single, many, batch across libraries, folder shares, permission updates, `ListSharedFoldersAsync`) |
+| `Directories` | `ListAsync` (filter, recursive), `GetAsync` / `TryGetAsync` / `ExistsAsync`, `CreateAsync`, `EnsureAsync`, `RenameAsync`, `CopyAsync`, `MoveAsync`, `MoveMergeAsync`, `RevertAsync`, `DeleteAsync` / `DeleteIfExistsAsync` |
+| `Files` | `GetAsync` / `TryGetAsync` / `ExistsAsync`, `UploadAsync` / `UploadFileAsync`, `UpdateAsync`, `OpenReadAsync`, `DownloadAsync`, `ReadAllBytesAsync`, `ReadAllTextAsync`, download/upload links, `RenameAsync`, `CopyAsync`, `MoveAsync`, `DeleteAsync`, `CreateAsync`, `GetHistoryAsync`, revisions (`RevertAsync`, `OpenRevisionReadAsync`, ...), `LockAsync` / `UnlockAsync`, `GetThumbnailAsync` |
+| `Items` | Batch `CopyAsync`, `MoveAsync`, `DeleteAsync`; async `StartCopyAsync` / `StartMoveAsync` / `GetProgressAsync` / `CancelAsync` / `WaitAsync`; zip downloads (`CreateZipAsync`, `OpenZipAsync`, `DownloadZipAsync`) |
+| `ShareLinks` | `ListAsync`, `GetAsync`, `CreateAsync`, `GetOrCreateAsync`, `UpdateAsync`, `DeleteAsync` / `DeleteManyAsync`, `CreateAdditionalAsync`, `CreateBatchAsync`, `SendAsync`, `ListDirentsAsync`, authorized users/emails, `GetSmartLinkAsync` |
+| `UploadLinks` | `ListAsync`, `GetAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync` / `DeleteManyAsync`, `SendAsync`, `GetUploadUrlAsync`, `UploadAsync` (through the link) |
+| `FolderPermissions` | Sub-folder permissions for users and groups: list, add, update, remove |
 | `Starred` | `ListAsync`, `StarAsync`, `UnstarAsync` |
-| `Groups` | CRUD, members (single and bulk), `SetAdminAsync`, `ListLibrariesAsync` |
-| `Metadata` | `GetStatusAsync`, `SetEnabledAsync`, `GetRecordAsync`, `UpdateRecordsAsync` (auto-batched) |
-| `AdminUsers` | `ListAsync` / `ListAllAsync`, `SearchAsync`, `GetAsync` / `TryGetAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync` (staff only) |
+| `Groups` | CRUD, `TransferAsync`, members (get, single and bulk add, remove), `SetAdminAsync`, `ListLibrariesAsync` |
+| `FileComments` | List, count, create, get, update/resolve, delete, replies |
+| `FileTags` | Legacy library tags and file tags (`repo-tags`) |
+| `Search` | `SearchFilesAsync` (full-text; needs a search backend), `SearchFileNamesAsync`, `SearchUsersAsync` |
+| `Invitations` | Guest invitations: list, create (single/many), get, delete, revoke |
+| `Metadata` | `GetStatusAsync`, `SetEnabledAsync`, records (`GetRecordAsync`, `GetRecordByIdAsync`, `ListRecordsAsync`, `UpdateRecordsAsync` auto-batched, `UpdateRecordByPathAsync`), columns, details settings, `ExtractFileDetailsAsync`, OCR; `.Views` (CRUD, move, duplicate, view folders), `.Tags` (CRUD, file tags, tag links, merge), `.Faces` (Seafile 13 only) |
+| `Admin` | `Users`, `Groups`, `Libraries` (incl. trash and history settings), `Departments`, `Logs`, `Organizations`, `Shares`, `ShareLinks`, `Notifications` (staff only). `session.AdminUsers` is the same instance as `Admin.Users`. |
 
 `SeafPath` normalizes and combines library paths (`SeafPath.Combine("42", "Uploads/", "/2026")` → `/42/Uploads/2026`).
 All returned paths are normalized (leading `/`, no trailing `/`).

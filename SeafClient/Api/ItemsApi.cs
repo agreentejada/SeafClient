@@ -3,7 +3,7 @@ using SeafClient.Internal;
 namespace SeafClient.Api;
 
 /// <summary>Batch operations on several files/directories that share a parent directory.</summary>
-public sealed class ItemsApi
+public sealed partial class ItemsApi
 {
     private readonly SeafTransport _t;
     internal ItemsApi(SeafTransport t) => _t = t;

@@ -10,7 +10,7 @@ namespace SeafClient.Api;
 /// <see cref="CreateAsync"/> therefore checks first and throws a 409 <see cref="SeafException"/>, and
 /// <see cref="EnsureAsync"/> is the idempotent "create if missing" variant.
 /// </remarks>
-public sealed class DirectoriesApi
+public sealed partial class DirectoriesApi
 {
     private readonly SeafTransport _t;
     private readonly ItemsApi _items;

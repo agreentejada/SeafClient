@@ -10,6 +10,21 @@ public sealed record SeafMetadataStatus
     public bool TagsEnabled { get; init; }
     public bool FaceRecognitionEnabled { get; init; }
     public bool SummaryEnabled { get; init; }
+
+    /// <summary>OCR status (Seafile 12 only).</summary>
+    public bool OcrEnabled { get; init; }
+
+    /// <summary>Language of the built-in tags, when tags are enabled (older servers only).</summary>
+    public string? TagsLang { get; init; }
+
+    /// <summary>Details-panel settings as a JSON object string, e.g. <c>{"x": 1}</c>.</summary>
+    public string? DetailsSettings { get; init; }
+
+    /// <summary>Columns hidden in every view.</summary>
+    public IReadOnlyList<string> GlobalHiddenColumns { get; init; } = [];
+
+    /// <summary>Whether the current user may see the metadata views.</summary>
+    public bool ShowView { get; init; }
 }
 
 /// <summary>

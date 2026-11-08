@@ -29,10 +29,18 @@ public sealed class SeafSession : IDisposable
         Directories = new DirectoriesApi(transport, Items);
         Files = new FilesApi(transport);
         ShareLinks = new ShareLinksApi(transport);
+        UploadLinks = new UploadLinksApi(transport);
+        FolderPermissions = new FolderPermissionsApi(transport);
         Starred = new StarredApi(transport);
         Groups = new GroupsApi(transport);
         Metadata = new MetadataApi(transport);
+        Account = new AccountApi(transport);
+        Search = new SearchApi(transport);
+        FileComments = new FileCommentsApi(transport);
+        FileTags = new FileTagsApi(transport);
+        Invitations = new InvitationsApi(transport);
         AdminUsers = new AdminUsersApi(transport);
+        Admin = new AdminApi(transport, AdminUsers);
     }
 
     /// <summary>The server base URI (always ends with '/').</summary>
@@ -50,10 +58,31 @@ public sealed class SeafSession : IDisposable
     public FilesApi Files { get; }
     public ItemsApi Items { get; }
     public ShareLinksApi ShareLinks { get; }
+    public UploadLinksApi UploadLinks { get; }
+
+    /// <summary>Per-user / per-group permissions on sub-folders of a library (Pro).</summary>
+    public FolderPermissionsApi FolderPermissions { get; }
+
     public StarredApi Starred { get; }
     public GroupsApi Groups { get; }
     public MetadataApi Metadata { get; }
+
+    /// <summary>The current user's profile, avatar, devices and activity feed.</summary>
+    public AccountApi Account { get; }
+
+    public SearchApi Search { get; }
+    public FileCommentsApi FileComments { get; }
+
+    /// <summary>Legacy library/file tags (<c>repo-tags</c>). For metadata-server tags see <see cref="Metadata"/>.</summary>
+    public FileTagsApi FileTags { get; }
+
+    public InvitationsApi Invitations { get; }
+
+    /// <summary>Same instance as <see cref="AdminApi.Users"/>; kept for convenience.</summary>
     public AdminUsersApi AdminUsers { get; }
+
+    /// <summary>System administration (staff accounts only).</summary>
+    public AdminApi Admin { get; }
 
     /// <summary>
     /// Obtains an API token with username/password and returns a session using it.
