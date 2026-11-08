@@ -1,94 +1,137 @@
 # SeafClient
 
-This project is a client implementation for the [Seafile](https://www.seafile.com) Web API  for .Net as .NET Standard Library.
-The minimum required .NET Standard version of the target platform is 1.1 .
-Thus, it can be used with applications targeting .NET Core, .NET Framework, Windows Universal Platform Projects (UWP), Xamarin and Mono as well as Unity. For a complete list of supported target platforms have a look [here](https://docs.microsoft.com/en-us/dotnet/standard/net-standard).
+A strongly-typed, async .NET client for the [Seafile](https://www.seafile.com) Web API.
 
-The aim is to create a library to easily access a Seafile server and the files stored there through a .Net application in a strong-typed fashion (no custom JSON parsing and with meaningful error messages, etc.) The library uses async/await methods for requests to the Seafile server.
+Version 2 is a ground-up rewrite targeting **Seafile 11–14** (tested against Seafile 14.0.9 Pro):
 
-The current stable release of the SeafClient library is available on NuGet [here](https://www.nuget.org/packages/SeafClient/).
+- `net8.0` / `net10.0`, `System.Text.Json`, no third-party dependencies
+- Resource-grouped API: `session.Files`, `session.Directories`, `session.ShareLinks`, ...
+- Uses the current `api/v2.1` endpoints, falling back to `api2` only where v2.1 has no equivalent
+- Typed errors (`SeafException` with `StatusCode`, `IsNotFound`, ...), automatic retries on 429 and transient 5xx
+- Every call takes a `CancellationToken`; works with `IHttpClientFactory`
 
-This repository is automatically built and tested with AppVeyor: <br/>
-![build status](https://ci.appveyor.com/api/projects/status/github/renber/seafclient?svg=true) <br/>
-![test status](http://teststatusbadge.azurewebsites.net/api/status/renber/seafclient)
+## Quick start
 
-## Usage example (C#)
-
-```C#
+```csharp
 using SeafClient;
+using SeafClient.Models;
 
-async Task Demo()
-{
-    var serverUri = new Uri("https://seacloud.cc", UriKind.Absolute);
-    var username = "testuser@internet.com";
-    var password = new [] { 't', 'e', 's', 't' };
+using var seaf = await SeafSession.LoginAsync(new Uri("https://cloud.example.com"), "me@example.com", password);
 
-    try
-    {
-        // authenticate with the Seafile server and retrieve a Session
-        var session = await SeafSession.Establish(serverUri, username, password);
+var lib = await seaf.Libraries.FindByNameAsync("TaxData")
+          ?? await seaf.Libraries.CreateAsync("TaxData");
 
-        // connection was successful
-        // The password array has been overwritten with zeroes as soon as the authentication request was sent
-        // now retrieve some information about the account
-        var accountInfo = await session.CheckAccountInfo();
-        Debug.WriteLine("Nickname: {0}\nUsed Storage: {1:d} Bytes\nQuota: {2}", accountInfo.Nickname, accountInfo.Usage, accountInfo.Usage);
+// Idempotent: never produces "2026 (1)".
+await seaf.Directories.EnsureAsync(lib.Id, "/clients/42/2026");
 
-        // get the url of the user avatar
-        var userAvatar = await session.GetUserAvatar(128);
-        Debug.WriteLine("Url to user's avatar: " + userAvatar.Url);
+await using var pdf = File.OpenRead("return.pdf");
+var uploaded = await seaf.Files.UploadAsync(lib.Id, "/clients/42/2026", "return.pdf", pdf,
+    new SeafUploadOptions { Replace = true, Progress = new Progress<long>(b => Console.WriteLine(b)) });
 
-        // get the libraries
-        var libraries = await session.ListLibraries();
-        foreach (var lib in libraries)
-            Debug.WriteLine(lib.Name + " " + lib.Timestamp);
+foreach (var entry in await seaf.Directories.ListAsync(lib.Id, "/clients/42", recursive: true))
+    Console.WriteLine($"{entry.Type} {entry.Path} {entry.Size} {entry.Modified}");
 
-        // list root contents of the first library
-        var firstLib = libraries.FirstOrDefault();
-        if (firstLib != null)
-        {
-            var content = await session.ListDirectory(firstLib, "/");
-            foreach (var dirEntry in content)
-                switch (dirEntry.Type)
-                {
-                    case SeafClient.Types.DirEntryType.File:
-                        Debug.WriteLine(dirEntry.Name + " - " + dirEntry.Size + " Bytes");
-                        break;
-                    default:
-                        Debug.WriteLine(dirEntry.Name);
-                        break;
-                }
-        }
-    }
-    catch (SeafException ex)
-    {
-        Debug.WriteLine($"An error occured: {ex.Message} (ErrorCode: {ex.SeafError.SeafErrorCode} ({ex.SeafError.HttpStatusCode}))");
-    }
-}
+var (link, created) = await seaf.ShareLinks.GetOrCreateAsync(lib.Id, uploaded.Path,
+    new SeafShareLinkOptions { ExpiresAt = DateTimeOffset.Now.AddDays(7), Password = "s3cret-pass" });
 ```
 
-## Currently implemented requests
-See the [official Seafile Web API documentation](https://manual.seafile.com/develop/web_api_v2.1.html) for a list of all available requests. The following requests are currently implemented:
+An existing API token can be used directly: `SeafSession.FromToken(serverUri, token)`.
 
-* Authentication
-* Ping (with and without authentication)
-* Get Server Info
-* Check Account Info
-* Get User Avatar
-* Get Default Library
-* Get Library Info
-* Create Library (unencrypted and encrypted)
-* List Libraries / List Shared Libraries
-* List Directory Entries
-* Create Directory
-* Delete Directory / File
-* Rename Directory / File
-* Copy / Move File
-* Get Thumbnail Image
-* Get Download Link
-* Get Upload Link / Upload file
-* Get Update link / Update file
-* Starred files (list / star / unstar)
-* Groups (list / create / delete)
-* Group members (add / bulk add / remove)
-* Decrypt an encrypted library (allowing to download files from the encrypted library)
+### Library (repo) API tokens
+
+A repo token grants access to a single library without a user account, e.g. for integrations:
+
+```csharp
+var token = await seaf.Libraries.CreateApiTokenAsync(lib.Id, "my-integration", SeafRepoTokenPermission.Rw);
+using var repo = SeafRepoTokenSession.FromToken(serverUri, token.ApiToken);
+await repo.Directories.EnsureAsync("/inbox");
+await repo.Files.UploadAsync("/inbox", "a.txt", stream);
+```
+
+`SeafRepoTokenSession` offers `Directories`, `Files`, `Items`, `ShareLinks` and `Metadata` (records, views, tags) scoped to that library.
+On Seafile 14 some tag operations (file tags, tag files, tag links) fail through a repo token server-side; use an account session for those.
+
+## API overview
+
+| Group | Highlights |
+|---|---|
+| `Server` | `PingAsync`, `AuthPingAsync`, `GetInfoAsync`, `GetAccountInfoAsync`, `GetAvatarUrlAsync` |
+| `Account` | Profile get/update, `UploadAvatarAsync`, devices list/unlink, client-login token/URL, `ListActivitiesAsync` |
+| `Libraries` | `ListAsync(type)`, `ListDistinctAsync`, `FindByNameAsync`, `SearchByNameAsync`, `GetAsync`, `CreateAsync`, `RenameAsync`, `DeleteAsync`, `DecryptAsync`, default library, owner / `TransferAsync`, history, commits, snapshots (`ListSnapshotDirectoryAsync`, `RevertToSnapshotAsync`), snapshot labels, history limit, trash (list/clean/restore), shared-with-me / `LeaveShareAsync`, sharing with users/groups (single, many, batch across libraries, folder shares, permission updates, `ListSharedFoldersAsync`) |
+| `Directories` | `ListAsync` (filter, recursive), `GetAsync` / `TryGetAsync` / `ExistsAsync`, `CreateAsync`, `EnsureAsync`, `RenameAsync`, `CopyAsync`, `MoveAsync`, `MoveMergeAsync`, `RevertAsync`, `DeleteAsync` / `DeleteIfExistsAsync` |
+| `Files` | `GetAsync` / `TryGetAsync` / `ExistsAsync`, `UploadAsync` / `UploadFileAsync`, `UpdateAsync`, `OpenReadAsync`, `DownloadAsync`, `ReadAllBytesAsync`, `ReadAllTextAsync`, download/upload links, `RenameAsync`, `CopyAsync`, `MoveAsync`, `DeleteAsync`, `CreateAsync`, `GetHistoryAsync`, revisions (`RevertAsync`, `OpenRevisionReadAsync`, ...), `LockAsync` / `UnlockAsync`, `GetThumbnailAsync` |
+| `Items` | Batch `CopyAsync`, `MoveAsync`, `DeleteAsync`; async `StartCopyAsync` / `StartMoveAsync` / `GetProgressAsync` / `CancelAsync` / `WaitAsync`; zip downloads (`CreateZipAsync`, `OpenZipAsync`, `DownloadZipAsync`) |
+| `ShareLinks` | `ListAsync`, `GetAsync`, `CreateAsync`, `GetOrCreateAsync`, `UpdateAsync`, `DeleteAsync` / `DeleteManyAsync`, `CreateAdditionalAsync`, `CreateBatchAsync`, `SendAsync`, `ListDirentsAsync`, authorized users/emails, `GetSmartLinkAsync` |
+| `UploadLinks` | `ListAsync`, `GetAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync` / `DeleteManyAsync`, `SendAsync`, `GetUploadUrlAsync`, `UploadAsync` (through the link) |
+| `FolderPermissions` | Sub-folder permissions for users and groups: list, add, update, remove |
+| `Starred` | `ListAsync`, `StarAsync`, `UnstarAsync` |
+| `Groups` | CRUD, `TransferAsync`, members (get, single and bulk add, remove), `SetAdminAsync`, `ListLibrariesAsync` |
+| `FileComments` | List, count, create, get, update/resolve, delete, replies |
+| `FileTags` | Legacy library tags and file tags (`repo-tags`) |
+| `Search` | `SearchFilesAsync` (full-text; needs a search backend), `SearchFileNamesAsync`, `SearchUsersAsync` |
+| `Invitations` | Guest invitations: list, create (single/many), get, delete, revoke |
+| `Metadata` | `GetStatusAsync`, `SetEnabledAsync`, records (`GetRecordAsync`, `GetRecordByIdAsync`, `ListRecordsAsync`, `UpdateRecordsAsync` auto-batched, `UpdateRecordByPathAsync`), columns, details settings, `ExtractFileDetailsAsync`, OCR; `.Views` (CRUD, move, duplicate, view folders), `.Tags` (CRUD, file tags, tag links, merge), `.Faces` (Seafile 13 only) |
+| `Admin` | `Users`, `Groups`, `Libraries` (incl. trash and history settings), `Departments`, `Logs`, `Organizations`, `Shares`, `ShareLinks`, `Notifications` (staff only). `session.AdminUsers` is the same instance as `Admin.Users`. |
+
+`SeafPath` normalizes and combines library paths (`SeafPath.Combine("42", "Uploads/", "/2026")` → `/42/Uploads/2026`).
+All returned paths are normalized (leading `/`, no trailing `/`).
+
+## Seafile behaviours worth knowing
+
+- **mkdir never fails on an existing name**; Seafile silently creates `name (1)`. `Directories.CreateAsync` checks first and throws a
+  409 `SeafException`; `Directories.EnsureAsync` is the idempotent variant.
+- **Uploads auto-rename** unless `Replace = true`. `SeafUploadedFile.Name` / `.Path` hold the name actually stored.
+- **File delete is idempotent** on the server; directory delete returns 404 for a missing folder (use `DeleteIfExistsAsync`).
+- **File history and metadata records are indexed asynchronously**; they can take a few seconds to show up.
+- **Downloads are decoded as UTF-8** by `ReadAllTextAsync` because the file server often declares a wrong charset.
+- If Seafile's `SERVICE_URL` / `FILE_SERVER_ROOT` is not reachable from the client (common with Docker), set
+  `SeafClientOptions.RewriteFileServerUrls = true` to rewrite upload/download links to the session's host.
+
+## Options
+
+```csharp
+var options = new SeafClientOptions
+{
+    HttpClient = httpClientFactory.CreateClient("seafile"), // optional; not disposed by the session
+    MaxRetries = 3,                                          // 429 always; 502/503/504 + network errors for GET/PUT/DELETE
+    RetryBaseDelay = TimeSpan.FromSeconds(1),                // exponential backoff unless the server sends Retry-After
+    Timeout = TimeSpan.FromMinutes(5),                       // only for the internally created HttpClient
+};
+```
+
+## Tests
+
+`SeafClient.Tests` contains unit tests and live integration tests. The live tests create (and delete) a temporary library
+and group, and are skipped unless these environment variables are set:
+
+```bash
+export SEAFILE_TEST_URL=http://localhost:4500
+export SEAFILE_TEST_USER=me@example.com
+export SEAFILE_TEST_PASSWORD=...
+dotnet test
+```
+
+The account should be a system admin for the admin-API tests.
+
+## Migrating from 1.x
+
+| 1.x | 2.x |
+|---|---|
+| `SeafSession.Establish(uri, user, char[] pwd)` | `SeafSession.LoginAsync(uri, user, pwd)` |
+| `session.Ping()` | `session.Server.PingAsync()` |
+| `ListLibraries()` + `ListSharedLibraries()` | `Libraries.ListAsync(type)` / `ListDistinctAsync()` / `FindByNameAsync()` |
+| `ListDirectory(lib, path)` / `SendRequest(new ListDirectoryEntriesRequest(...))` | `Directories.ListAsync(lib, path, filter, recursive)` |
+| `GetDirectoryDetail` / `CreateDirectory` / `DeleteDirectory` | `Directories.GetAsync` / `CreateAsync` or `EnsureAsync` / `DeleteAsync` |
+| `GetFileDetail` (returned `SeafDirEntry`) | `Files.GetAsync` (returns `SeafFile`) |
+| `UploadSingle(lib, dir, name, stream, createParents)` | `Files.UploadAsync(lib, dir, name, stream, new SeafUploadOptions { CreateParents = ... })` |
+| `GetFileDownloadLink` | `Files.GetDownloadLinkAsync`, or `OpenReadAsync` / `ReadAllTextAsync` |
+| `CopyFile` / `MoveFile` | `Files.CopyAsync` / `Files.MoveAsync` (directory destination) |
+| `ListSharedLinks` / `CreateShareLink` / `DeleteShareLink(link.Id)` | `ShareLinks.ListAsync` / `CreateAsync` / `DeleteAsync(link.Token)` |
+| `GetSmartLink` | `ShareLinks.GetSmartLinkAsync` |
+| `SeafDirEntry.Timestamp` (`DateTime`, local) | `SeafDirEntry.Modified` (`DateTimeOffset?`) |
+| `SeafException.SeafError.HttpStatusCode` | `SeafException.StatusCode` / `IsNotFound` |
+| namespaces `SeafClient.Types`, `.Requests.*`, `.Exceptions` | `SeafClient.Models`; exceptions live in `SeafClient` |
+
+## License
+
+MIT. Originally created by René Bergelt.
