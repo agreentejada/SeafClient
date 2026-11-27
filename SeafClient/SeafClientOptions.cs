@@ -44,5 +44,5 @@ public sealed class SeafClientOptions
     public bool RewriteFileServerUrls { get; set; }
 
     /// <summary>User-Agent sent with each request.</summary>
-    public string UserAgent { get; set; } = "SeafClient/2.0";
+    public string UserAgent { get; set; } = "SeafClient/14.1";
 }

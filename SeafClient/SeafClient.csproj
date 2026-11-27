@@ -9,7 +9,7 @@
     <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
     <RootNamespace>SeafClient</RootNamespace>
 
-    <Version>2.0.0</Version>
+    <Version>14.1.0</Version>
     <Authors>René Bergelt; agreentejada</Authors>
     <Description>Strongly-typed async .NET client for the Seafile Web API (targets Seafile 11-14).</Description>
     <Copyright>Copyright © 2016-2026</Copyright>
