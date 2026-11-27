@@ -41,7 +41,7 @@ public sealed class RepoTokenFilesApi
     {
         var link = await GetDownloadLinkAsync(path, ct).ConfigureAwait(false);
         var response = await _c.T.SendRawAsync(HttpMethod.Get, link, null, HttpCompletionOption.ResponseHeadersRead, ct, authenticate: false).ConfigureAwait(false);
-        return FilesApi.WrapResponseStream(await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false), response);
+        return await SeafTransport.ReadStreamAsync(response, ct).ConfigureAwait(false);
     }
 
     public async Task DownloadAsync(string path, Stream destination, CancellationToken ct = default)
@@ -51,15 +51,11 @@ public sealed class RepoTokenFilesApi
     }
 
     public async Task<byte[]> ReadAllBytesAsync(string path, CancellationToken ct = default)
-    {
-        using var ms = new MemoryStream();
-        await DownloadAsync(path, ms, ct).ConfigureAwait(false);
-        return ms.ToArray();
-    }
+        => await _c.T.DownloadBytesAsync(await GetDownloadLinkAsync(path, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
     /// <summary>Downloads a text file, decoding as UTF-8 by default (the file server's declared charset is unreliable).</summary>
     public async Task<string> ReadAllTextAsync(string path, Encoding? encoding = null, CancellationToken ct = default)
-        => (encoding ?? Encoding.UTF8).GetString(await ReadAllBytesAsync(path, ct).ConfigureAwait(false));
+        => await _c.T.DownloadTextAsync(await GetDownloadLinkAsync(path, ct).ConfigureAwait(false), encoding, ct).ConfigureAwait(false);
 
     // ---------------- upload ----------------
 
@@ -77,7 +73,8 @@ public sealed class RepoTokenFilesApi
     public async Task<SeafUploadedFile> UploadAsync(string parentDir, string fileName, Stream content, SeafUploadOptions? options = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(fileName);
-        if (fileName.Contains('/')) throw new ArgumentException("File name must not contain '/'.", nameof(fileName));
+        if (fileName.Contains('/') || fileName.Contains('\\')) throw new ArgumentException("File name must not contain '/' or '\\'.", nameof(fileName));
+        ArgumentNullException.ThrowIfNull(content);
         options ??= new SeafUploadOptions();
         parentDir = SeafPath.Normalize(parentDir);
 

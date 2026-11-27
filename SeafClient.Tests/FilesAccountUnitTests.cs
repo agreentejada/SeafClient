@@ -141,6 +141,168 @@ public class FilesAccountUnitTests
         AssertUnquotedMultipart(r.ContentTypes[0], r.Bodies[0]);
     }
 
+    private sealed class SequenceHandler(Func<HttpRequestMessage, int, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+    {
+        public int Calls;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => respond(request, Calls++);
+    }
+
+    [Fact]
+    public async Task UploadAvatar_RetriesOn429_DoesNotDisposeCallerStream()
+    {
+        byte[]? uploadedBytes = null;
+        var handler = new SequenceHandler(async (req, attempt) =>
+        {
+            if (attempt == 0)
+            {
+                if (req.Content != null) await req.Content.ReadAsByteArrayAsync();
+                return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            }
+
+            uploadedBytes = req.Content == null ? null : await req.Content.ReadAsByteArrayAsync();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"avatar_url":"http://seaf.test/media/avatars/pic.png"}""")
+            };
+        });
+
+        using var s = SeafSession.FromToken(new Uri("http://seaf.test/"), "tok",
+            new SeafClientOptions { HttpClient = new HttpClient(handler), MaxRetries = 2, RetryBaseDelay = TimeSpan.FromMilliseconds(1) });
+        using var ms = new MemoryStream([10, 20, 30, 40]);
+
+        var url = await s.Account.UploadAvatarAsync(ms, "a\"b\\c.png");
+
+        Assert.Equal("http://seaf.test/media/avatars/pic.png", url);
+        Assert.Equal(2, handler.Calls);
+        Assert.True(ms.CanRead);
+        Assert.Equal(4, ms.Position);
+        Assert.NotNull(uploadedBytes);
+    }
+
+    [Fact]
+    public async Task Files_ReadAllTextAsync_IgnoresServerCharset_AndDecodesUtf8()
+    {
+        var handler = new SequenceHandler((req, _) =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/file/"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("\"http://seaf.test/dl/1\"") });
+
+            var res = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("héllo 世界"u8.ToArray()) };
+            res.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain") { CharSet = "gbk" };
+            return Task.FromResult(res);
+        });
+
+        using var s = SeafSession.FromToken(new Uri("http://seaf.test/"), "tok", new SeafClientOptions { HttpClient = new HttpClient(handler) });
+        Assert.Equal("héllo 世界", await s.Files.ReadAllTextAsync("repo-1", "/hello.txt"));
+    }
+
+    [Fact]
+    public async Task Files_ReadAllBytesAsync_ReturnsExactBytes()
+    {
+        byte[] expected = [0x01, 0xFE, 0x00, 0x7F, 0x80];
+        var handler = new SequenceHandler((req, _) =>
+        {
+            if (req.RequestUri!.AbsolutePath.EndsWith("/file/"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("\"http://seaf.test/dl/2\"") });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(expected) });
+        });
+
+        using var s = SeafSession.FromToken(new Uri("http://seaf.test/"), "tok", new SeafClientOptions { HttpClient = new HttpClient(handler) });
+        Assert.Equal(expected, await s.Files.ReadAllBytesAsync("repo-1", "/bin.dat"));
+    }
+
+    [Fact]
+    public async Task Files_ReadAllBytesAndText_HandleEmptyAndUnknownContentLength()
+    {
+        byte[] binaryPayload = [0x10, 0x20, 0x30, 0x40, 0x50];
+        const string textPayload = "café ☕";
+
+        var handler = new SequenceHandler((req, _) =>
+        {
+            var p = req.RequestUri!.AbsolutePath;
+            if (p.EndsWith("/file/"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"\"http://seaf.test/dl/{req.RequestUri.Query}\"") });
+            if (req.RequestUri.Query.Contains("empty"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([]) });
+            if (req.RequestUri.Query.Contains("chunked-bin"))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new UnknownLengthContent(binaryPayload) });
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new UnknownLengthContent(System.Text.Encoding.UTF8.GetBytes(textPayload)) });
+        });
+
+        using var s = SeafSession.FromToken(new Uri("http://seaf.test/"), "tok", new SeafClientOptions { HttpClient = new HttpClient(handler) });
+
+        Assert.Empty(await s.Files.ReadAllBytesAsync("repo-1", "/empty"));
+        Assert.Equal(string.Empty, await s.Files.ReadAllTextAsync("repo-1", "/empty"));
+        Assert.Equal(binaryPayload, await s.Files.ReadAllBytesAsync("repo-1", "/chunked-bin"));
+        Assert.Equal(textPayload, await s.Files.ReadAllTextAsync("repo-1", "/chunked-text"));
+    }
+
+    private sealed class UnknownLengthContent(byte[] data) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) => stream.WriteAsync(data, 0, data.Length);
+        protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromResult<Stream>(new MemoryStream(data, writable: false));
+        protected override bool TryComputeLength(out long length) { length = 0; return false; }
+    }
+
+    [Fact]
+    public async Task ProgressStreamContent_ReportsMultiChunkProgress_AndLeavesSourceOpen()
+    {
+        var reported = new List<long>();
+        var progress = new SyncProgress(reported.Add);
+        using var source = new MemoryStream([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        using var content = new SeafClient.Api.ProgressStreamContent(source, progress, bufferSize: 4);
+        using var dest = new MemoryStream();
+
+        await content.CopyToAsync(dest);
+
+        Assert.Equal([4L, 8L, 10L], reported);
+        Assert.Equal(source.ToArray(), dest.ToArray());
+        Assert.True(source.CanRead);
+    }
+
+    [Fact]
+    public async Task ReadStreamAsync_DisposesResponse_WhenReadAsStreamThrows()
+    {
+        var content = new ThrowingStreamHttpContent();
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            SeafClient.Internal.SeafTransport.ReadStreamAsync(response, CancellationToken.None));
+        Assert.True(content.Disposed);
+    }
+
+    [Fact]
+    public async Task Upload_ValidatesFileNameBackslashAndNullContent()
+    {
+        using var s = SeafSession.FromToken(new Uri("http://seaf.test/"), "tok", new SeafClientOptions { HttpClient = new HttpClient(new SequenceHandler((_, _) => throw new InvalidOperationException())) });
+        using var ms = new MemoryStream([1]);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => s.Files.UploadAsync("r", "/", @"sub\file.txt", ms));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => s.Files.UploadAsync("r", "/", "ok.txt", null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => s.Files.UpdateAsync("r", "/ok.txt", null!));
+        await Assert.ThrowsAsync<ArgumentException>(() => s.UploadLinks.UploadAsync("tok", @"sub\file.txt", ms));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => s.UploadLinks.UploadAsync("tok", "ok.txt", null!));
+
+        using var repo = SeafRepoTokenSession.FromToken(new Uri("http://seaf.test/"), "tok", new SeafClientOptions { HttpClient = new HttpClient(new SequenceHandler((_, _) => throw new InvalidOperationException())) });
+        await Assert.ThrowsAsync<ArgumentException>(() => repo.Files.UploadAsync("/", @"sub\file.txt", ms));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => repo.Files.UploadAsync("/", "ok.txt", null!));
+    }
+
+    private sealed class SyncProgress(Action<long> onReport) : IProgress<long>
+    {
+        public void Report(long value) => onReport(value);
+    }
+
+    private sealed class ThrowingStreamHttpContent : HttpContent
+    {
+        public bool Disposed { get; private set; }
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) => Task.CompletedTask;
+        protected override bool TryComputeLength(out long length) { length = 0; return false; }
+        protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromException<Stream>(new InvalidOperationException("boom"));
+        protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
+    }
+
     private static void AssertUnquotedMultipart(string? contentType, string body)
     {
         Assert.NotNull(contentType);
